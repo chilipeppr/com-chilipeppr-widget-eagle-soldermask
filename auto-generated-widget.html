@@ -82,6 +82,8 @@ cprequire_test(["inline:com-chilipeppr-widget-eagle-soldermask"], function(solde
                             
                             // now init our own widget
                             soldermask.init(eagleWidget);
+                            
+                            
                         }
                     );
                     
@@ -114,6 +116,12 @@ cprequire_test(["inline:com-chilipeppr-widget-eagle-soldermask"], function(solde
                 fm.init();
             });
         });
+        
+    // for testing, subscribe to /afterRender and then forcibly show our tab
+    chilipeppr.subscribe('/com-chilipeppr-widget-eagle/afterToolPathRender', this, function() {
+        console.log("got event afterToolPathRender so now showing tab");
+        soldermask.showTab();    
+    });
 
 } /*end_test*/ );
 
@@ -253,6 +261,14 @@ cpdefine("inline:com-chilipeppr-widget-eagle-soldermask", ["chilipeppr_ready", /
             this.sceneRemove(this.mask3d);
         },
         /**
+         * Programatically show the tab from code rather than waiting for
+         * user to click.
+         */
+        showTab: function() {
+            console.log("programatically being asked to show tab. this:", this);    
+            $('.nav-tabs a[href="#' + this.id + '"]').tab('show');
+        },
+        /**
          * Iterate through the Eagle BRD dimensions XY coordinates and draw
          * a solder mask over the board.
          */
@@ -262,6 +278,11 @@ cpdefine("inline:com-chilipeppr-widget-eagle-soldermask", ["chilipeppr_ready", /
                 "clipperDimension:", this.eagleWidget.clipperDimension);
 
             var rectShape = new THREE.Shape();
+
+            // double check that padPts are in counter-clockwise
+            // winding order
+            var ori = ClipperLib.Clipper.Orientation(this.eagleWidget.clipperDimension);
+            console.log("orientation of dimension path:", ori);
 
             // use the dimensions and create our plane
             var pt, lastPt;
@@ -275,31 +296,59 @@ cpdefine("inline:com-chilipeppr-widget-eagle-soldermask", ["chilipeppr_ready", /
                     continue;
                 }
                 
-                if (indx == 0) rectShape.moveTo(pt.X, pt.Y);
-                else rectShape.lineTo(pt.X, pt.Y);
+                if (indx == 0) {
+                    firstPt = pt;
+                    rectShape.moveTo(pt.X, pt.Y);
+                } else {
+                    rectShape.lineTo(pt.X, pt.Y);
+                }
                 
                 lastPt = pt;
             }
             
-            // now remove the pads & smds
+            // add first point again to close shape
+            //rectShape.lineTo(firstPt.X, firstPt.Y);
             
-            // append cloned arrays together
-            //var padsSmds = this.eagleWidget.clipperPads.slice();
-            //padsSmds.push.apply(padsSmds, this.eagleWidget.clipperSmds.slice());
+            console.log("final solder mask dimensions:", rectShape);
+            
+            // ----------------------------
+            // now remove the pads & smds
+            // ----------------------------
+            // NOTE: we must make sure that the holes are in counter
+            // clockwise winding order
+            
+            // append smds & pads arrays together
+            // TODO: ask user if they wants pads & smds & even vias
             var padsSmds = [].concat( 
                 this.eagleWidget.clipperPads, 
                 this.eagleWidget.clipperSmds
             );
             
-            //for (var i = 0; i < this.eagleWidget.clipperPads.length; i++) {
+            // for debug, draw the paths as lines
+            this.eagleWidget.drawClipperPaths(padsSmds, 0xff0000, 0.6, 2);
+            
+            // we need to union everything because some of the smds or pads
+            // are made up of multiple overlapping paths and Three.js chokes on
+            // those. If, instead, we union all the paths, we get clean paths
+            // to send to Three.js and then it handles them like a champ
+            padsSmds = this.eagleWidget.getUnionOfClipperPaths(padsSmds);
+
+            // for debug, after union, draw the paths as lines
+            this.eagleWidget.drawClipperPaths(padsSmds, 0xff0000, 0.99, 3);
+            
             for (var i = 0; i < padsSmds.length; i++) {
                 
                 var padPts = padsSmds[i];
                 
+                // double check that padPts are in counter-clockwise
+                // winding order
+                var ori = ClipperLib.Clipper.Orientation(padPts);
+                console.log("orientation:", ori);
+                
                 // each pad will have multiple points in an array
                 var padHole = new THREE.Path(); 
                 
-                var pt, lastPt;
+                var pt, lastPt, firstPt;
                 for (var indx = 0; indx < padPts.length; indx++) {
                    
                     pt = padPts[indx];
@@ -310,27 +359,24 @@ cpdefine("inline:com-chilipeppr-widget-eagle-soldermask", ["chilipeppr_ready", /
                         continue;
                     }
                     
-                    if (indx == 0) padHole.moveTo(pt.X, pt.Y);
-                    else padHole.lineTo(pt.X, pt.Y);
-                    
+                    if (indx == 0) {
+                        firstPt = pt;
+                        padHole.moveTo(pt.X, pt.Y);
+                    } else {
+                        padHole.lineTo(pt.X, pt.Y);
+                    }
                     lastPt = pt;
                 }
+                
+                // now move back to first point to close the shape
+                //padHole.lineTo(firstPt.X, firstPt.Y);
                 
                 console.log("pushing hole:", padHole);
                 rectShape.holes.push(padHole);
 
             }
             
-            
-            /*
-            var padHole = new THREE.Path(); 
-            windowHole.moveTo(-2,-2);
-            windowHole.lineTo(0,-2);
-            windowHole.lineTo(0,0);
-            windowHole.lineTo(-2,0);
-            windowHole.lineTo(-2,-2);
-            shape.holes.push(windowHole);
-            */
+            console.log("final solder mask with holes:", rectShape);
             
             var rectGeom = new THREE.ShapeGeometry( rectShape );
             var rectMesh = new THREE.Mesh( rectGeom, new THREE.MeshPhongMaterial( { 
