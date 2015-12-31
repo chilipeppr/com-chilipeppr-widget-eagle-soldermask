@@ -302,7 +302,7 @@ cpdefine("inline:com-chilipeppr-widget-eagle-soldermask", ["chilipeppr_ready", /
             );
             
             // for debug, draw the paths as lines
-            this.eagleWidget.drawClipperPaths(padsSmds, 0xff0000, 0.6, 2);
+            //this.eagleWidget.drawClipperPaths(padsSmds, 0xff0000, 0.6, 2);
             
             // we need to union everything because some of the smds or pads
             // are made up of multiple overlapping paths and Three.js chokes on
@@ -311,7 +311,7 @@ cpdefine("inline:com-chilipeppr-widget-eagle-soldermask", ["chilipeppr_ready", /
             padsSmds = this.eagleWidget.getUnionOfClipperPaths(padsSmds);
 
             // for debug, after union, draw the paths as lines
-            this.eagleWidget.drawClipperPaths(padsSmds, 0xff0000, 0.99, 3);
+            //this.eagleWidget.drawClipperPaths(padsSmds, 0xff0000, 0.99, 3);
             
             for (var i = 0; i < padsSmds.length; i++) {
                 
